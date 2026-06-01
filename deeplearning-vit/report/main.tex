@@ -1,0 +1,210 @@
+\documentclass[letterpaper]{article}
+\usepackage{aaai24}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage[hyphens]{url}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{caption}
+\frenchspacing
+
+\pdfinfo{
+/TemplateVersion (2024.1)
+}
+
+\setcounter{secnumdepth}{0}
+
+\title{ConvStem-ViT: Improving Vision Transformer Patch Embedding for Small-Scale Image Classification}
+\author{
+    Anonymous Course Project
+}
+\affiliations{
+    Department / University \\
+    email@example.com
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Vision Transformer (ViT) demonstrates that pure Transformer architectures can
+perform competitively on image recognition when trained at scale. However, its
+original patch embedding layer converts non-overlapping image patches into
+tokens using a direct linear projection, which provides limited local inductive
+bias. This project studies a simple modification for small-scale image
+classification: replacing the linear patch embedding with a lightweight
+convolutional stem while keeping the Transformer encoder unchanged. We evaluate
+the method on CIFAR-10 against a vanilla ViT and a ResNet18 baseline under a
+shared training protocol. The goal is to test whether early local feature
+extraction improves the training behavior and final accuracy of ViT-like models
+in a data-limited setting.
+\end{abstract}
+
+\section{Introduction}
+
+The Vision Transformer proposed by \citet{dosovitskiy2021image} adapts the
+Transformer architecture \citep{vaswani2017attention} to image classification by
+dividing an image into fixed-size patches, projecting each patch into a token,
+and applying a standard Transformer encoder. This design removes many
+hand-crafted image-specific operations and shows strong scalability when large
+pre-training datasets are available.
+
+Despite its simplicity, the original ViT patch embedding has weaker local
+inductive bias than convolutional neural networks. For small image datasets such
+as CIFAR-10 \citep{krizhevsky2009learning}, this may make optimization and
+generalization more difficult. Motivated by prior observations that early
+convolutions can benefit vision Transformers \citep{xiao2021early}, we explore
+a compact ConvStem-ViT variant. The proposed model replaces the direct linear
+patch projection with a small stack of strided convolutions, batch
+normalization, and GELU activations.
+
+This course project asks a focused question: can a convolutional patch embedding
+improve a small ViT under the same Transformer architecture and training
+protocol? The contribution is a runnable implementation and a controlled
+experimental comparison among ResNet18, vanilla ViT, and ConvStem-ViT on
+CIFAR-10.
+
+\section{Related Work}
+
+\paragraph{Vision Transformer.}
+ViT treats image patches as visual words and processes them with a Transformer
+encoder \citep{dosovitskiy2021image}. Its key innovation is the direct transfer
+of the NLP Transformer recipe to image recognition: patch tokenization,
+learnable positional embeddings, a class token, multi-head self-attention, and
+MLP blocks.
+
+\paragraph{Convolutional networks.}
+Residual networks \citep{he2016deep} remain a strong baseline for small-scale
+image classification because convolutions naturally encode locality and
+translation equivariance. This makes ResNet18 a useful reference point for
+evaluating whether the proposed ViT modification narrows the gap between
+Transformer and convolutional models.
+
+\paragraph{Hybrid visual architectures.}
+Several works study combinations of convolution and attention. In particular,
+\citet{xiao2021early} show that early convolutional layers can improve visual
+Transformers. Our project follows the same broad motivation but keeps the
+implementation intentionally small and course-project friendly.
+
+\section{Method}
+
+\subsection{Original ViT Patch Embedding}
+
+Given an input image $x \in \mathbb{R}^{H \times W \times C}$, ViT splits it
+into $N = HW/P^2$ non-overlapping patches, where $P$ is the patch size. Each
+flattened patch is projected to a $D$-dimensional token. A learnable class token
+and positional embeddings are then added before the sequence is processed by
+Transformer encoder layers.
+
+For CIFAR-10, we use $32 \times 32$ images and a patch size of $4$, producing
+$8 \times 8 = 64$ patch tokens. This keeps the number of tokens manageable while
+preserving the spirit of the original ViT design.
+
+\subsection{ConvStem-ViT}
+
+The proposed ConvStem-ViT replaces the original patch embedding with a
+lightweight convolutional stem:
+
+\begin{equation}
+z = \mathrm{ConvStem}(x),
+\end{equation}
+
+where the stem consists of strided $3 \times 3$ convolutional layers, batch
+normalization, and GELU activations. For a patch size of $4$, two stride-2
+convolutions reduce the spatial resolution from $32 \times 32$ to $8 \times 8$.
+The resulting feature map is flattened into the same number of tokens as the
+vanilla ViT. The Transformer encoder depth, embedding dimension, number of
+attention heads, and classifier head are unchanged.
+
+This design isolates the effect of patch embedding. Any performance difference
+between vanilla ViT and ConvStem-ViT should mainly come from the added local
+feature extraction before self-attention.
+
+\section{Experiments}
+
+\subsection{Dataset}
+
+We evaluate on CIFAR-10 \citep{krizhevsky2009learning}, which contains 50,000
+training images and 10,000 test images from 10 classes. All images have
+resolution $32 \times 32$.
+
+\subsection{Models}
+
+We compare three models:
+
+\begin{itemize}
+    \item \textbf{ResNet18}: a convolutional baseline adapted for CIFAR-10.
+    \item \textbf{Vanilla ViT}: a small ViT using linear patch projection.
+    \item \textbf{ConvStem-ViT}: the same ViT backbone with convolutional patch embedding.
+\end{itemize}
+
+\subsection{Training Protocol}
+
+All models are trained using AdamW with learning rate $3 \times 10^{-4}$,
+weight decay $0.05$, cosine learning-rate scheduling, batch size 128, and 50
+epochs. Data augmentation includes random cropping and random horizontal
+flipping. The random seed is fixed to 42.
+
+\begin{table}[t]
+\centering
+\caption{Training settings used for all experiments.}
+\begin{tabular}{lc}
+\toprule
+Setting & Value \\
+\midrule
+Dataset & CIFAR-10 \\
+Epochs & 50 \\
+Batch size & 128 \\
+Optimizer & AdamW \\
+Learning rate & $3 \times 10^{-4}$ \\
+Weight decay & 0.05 \\
+Scheduler & Cosine annealing \\
+Seed & 42 \\
+\bottomrule
+\end{tabular}
+\label{tab:settings}
+\end{table}
+
+\section{Results and Analysis}
+
+Table~\ref{tab:results} should be filled after running the provided experiment
+scripts. The expected output files are \texttt{metrics.csv} and
+\texttt{summary.json} under each run directory.
+
+\begin{table}[t]
+\centering
+\caption{Main comparison on CIFAR-10. Replace TBD values after running experiments.}
+\begin{tabular}{llcc}
+\toprule
+Method & Patch Embedding & Accuracy & Params \\
+\midrule
+ResNet18 & CNN & TBD & TBD \\
+Vanilla ViT & Linear & TBD & TBD \\
+ConvStem-ViT & Conv stem & TBD & TBD \\
+\bottomrule
+\end{tabular}
+\label{tab:results}
+\end{table}
+
+The main hypothesis is that ConvStem-ViT will converge more stably or achieve a
+higher test accuracy than vanilla ViT because the convolutional stem captures
+local image patterns before global self-attention. If the improvement is small,
+the result still provides useful evidence that patch embedding alone may not be
+sufficient and that larger data, stronger augmentation, or pre-training may be
+needed for ViT-style architectures.
+
+\section{Conclusion}
+
+This project implements and evaluates a simple improvement to the ViT patch
+embedding layer. The original ViT demonstrates the power of representing images
+as patch tokens and processing them with Transformer encoders. Our ConvStem-ViT
+keeps this global attention mechanism but adds local visual feature extraction
+at the input stage. The project is designed to be reproducible, lightweight, and
+directly connected to the key innovation of the original paper.
+
+\bibliography{references}
+
+\end{document}

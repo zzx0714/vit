@@ -1,0 +1,22 @@
+experiment_name: resnet18_cifar10
+seed: 42
+device: auto
+
+data:
+  dataset: cifar10
+  root: data/cifar-10-python
+  download: true
+  image_size: 32
+  num_classes: 10
+  train_limit:
+  test_limit:
+
+model:
+  name: resnet18
+
+training:
+  epochs: 50
+  batch_size: 128
+  num_workers: 2
+  lr: 0.0003
+  weight_decay: 0.05
