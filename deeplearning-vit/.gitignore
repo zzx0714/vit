@@ -12,3 +12,4 @@ outputs/
 *.synctex.gz
 *.pth
 *.pt
+*.png
