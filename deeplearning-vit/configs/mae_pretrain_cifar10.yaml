@@ -1,0 +1,31 @@
+experiment_name: mae_pretrain_cifar10
+seed: 42
+device: auto
+
+data:
+  dataset: cifar10
+  root: data/cifar-10-python
+  download: true
+  image_size: 32
+  num_classes: 10
+  train_limit:
+  test_limit:
+
+model:
+  name: mae_vit
+  patch_size: 4
+  embed_dim: 384
+  depth: 12
+  num_heads: 6
+  decoder_embed_dim: 192
+  decoder_depth: 4
+  decoder_num_heads: 3
+  mlp_ratio: 4.0
+  mask_ratio: 0.75
+
+training:
+  epochs: 100
+  batch_size: 128
+  num_workers: 2
+  lr: 0.00015
+  weight_decay: 0.05
