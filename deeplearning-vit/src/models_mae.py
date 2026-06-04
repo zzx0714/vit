@@ -2,6 +2,9 @@ import math
 import torch
 import torch.nn as nn
 
+from src.models import LinearPatchEmbed, ConvStemPatchEmbed
+
+
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     grid_h = torch.arange(grid_size, dtype=torch.float32)
     grid_w = torch.arange(grid_size, dtype=torch.float32)
@@ -32,28 +35,25 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     emb = torch.cat([emb_sin, emb_cos], dim=1)
     return emb
 
-class PatchEmbed(nn.Module):
-    def __init__(self, image_size=32, patch_size=4, in_chans=3, embed_dim=384):
-        super().__init__()
-        self.image_size = image_size
-        self.patch_size = patch_size
-        self.grid_size = image_size // patch_size
-        self.num_patches = self.grid_size ** 2
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
-
-    def forward(self, x):
-        x = self.proj(x)
-        x = x.flatten(2).transpose(1, 2)
-        return x
 
 class MaskedAutoencoderViT(nn.Module):
     def __init__(self, img_size=32, patch_size=4, in_chans=3,
                  embed_dim=384, depth=12, num_heads=6,
                  decoder_embed_dim=192, decoder_depth=4, decoder_num_heads=3,
-                 mlp_ratio=4., norm_layer=nn.LayerNorm):
+                 mlp_ratio=4., norm_layer=nn.LayerNorm,
+                 patch_embed_type="linear"):
         super().__init__()
-        # Encoder specifics
-        self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
+        self.patch_size = patch_size
+
+        # Encoder patch embedding
+        if patch_embed_type == "convstem":
+            self.patch_embed = ConvStemPatchEmbed(
+                img_size, patch_size, in_chans, embed_dim
+            )
+        else:
+            self.patch_embed = LinearPatchEmbed(
+                img_size, patch_size, in_chans, embed_dim
+            )
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
@@ -84,16 +84,16 @@ class MaskedAutoencoderViT(nn.Module):
         self.initialize_weights()
 
     def initialize_weights(self):
-        # Init pos embedding
         pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
         self.pos_embed.data.copy_(torch.from_numpy(pos_embed.numpy()).float().unsqueeze(0))
 
         decoder_pos_embed = get_2d_sincos_pos_embed(self.decoder_pos_embed.shape[-1], self.patch_embed.grid_size, cls_token=True)
         self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed.numpy()).float().unsqueeze(0))
 
-        # Init patch_embed
-        w = self.patch_embed.proj.weight.data
-        torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
+        # Init patch_embed (only for LinearPatchEmbed)
+        if isinstance(self.patch_embed, LinearPatchEmbed):
+            w = self.patch_embed.proj.weight.data
+            torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
         torch.nn.init.normal_(self.cls_token, std=.02)
         torch.nn.init.normal_(self.mask_token, std=.02)
         self.apply(self._init_weights)
@@ -109,7 +109,7 @@ class MaskedAutoencoderViT(nn.Module):
 
     def patchify(self, imgs):
         """ imgs: (N, 3, H, W) -> (N, L, patch_size**2 *3) """
-        p = self.patch_embed.patch_size
+        p = self.patch_size
         assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
         h = w = imgs.shape[2] // p
         x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
@@ -129,7 +129,6 @@ class MaskedAutoencoderViT(nn.Module):
         ids_keep = ids_shuffle[:, :len_keep]
         x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
 
-        # generate binary mask: 0 is keep, 1 is remove
         mask = torch.ones([N, L], device=x.device)
         mask[:, :len_keep] = 0
         mask = torch.gather(mask, dim=1, index=ids_restore)
@@ -158,19 +157,18 @@ class MaskedAutoencoderViT(nn.Module):
         x = self.decoder_blocks(x)
         x = self.decoder_norm(x)
         x = self.decoder_pred(x)
-        x = x[:, 1:, :] # remove cls token
+        x = x[:, 1:, :]
         return x
 
     def forward_loss(self, imgs, pred, mask):
         target = self.patchify(imgs)
-        # Normalize target patches
         mean = target.mean(dim=-1, keepdim=True)
         var = target.var(dim=-1, keepdim=True)
         target = (target - mean) / (var + 1e-6)**.5
 
         loss = (pred - target) ** 2
-        loss = loss.mean(dim=-1) # mean loss per patch
-        loss = (loss * mask).sum() / mask.sum() # mse on masked patches
+        loss = loss.mean(dim=-1)
+        loss = (loss * mask).sum() / mask.sum()
         return loss
 
     def forward(self, imgs, mask_ratio=0.75):

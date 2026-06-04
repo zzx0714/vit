@@ -1,19 +1,19 @@
-experiment_name: mae_pretrain_cifar10
+experiment_name: mae_pretrain_convstem_tiny_imagenet
 seed: 42
 device: auto
 
 data:
-  dataset: cifar10
-  root: data/cifar-10-python
-  download: true
-  image_size: 32
-  num_classes: 10
+  dataset: tiny_imagenet
+  root: data
+  image_size: 64
+  num_classes: 200
   train_limit:
   test_limit:
 
 model:
   name: mae_vit
-  patch_size: 4
+  patch_size: 8
+  patch_embed_type: convstem
   embed_dim: 384
   depth: 12
   num_heads: 6

@@ -1,0 +1,21 @@
+experiment_name: resnet18_tiny_imagenet
+seed: 42
+device: auto
+
+data:
+  dataset: tiny_imagenet
+  root: data
+  image_size: 64
+  num_classes: 200
+  train_limit:
+  test_limit:
+
+model:
+  name: resnet18
+
+training:
+  epochs: 100
+  batch_size: 256
+  num_workers: 2
+  lr: 0.0005
+  weight_decay: 0.05

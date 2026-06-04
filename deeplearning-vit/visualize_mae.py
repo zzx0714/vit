@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import yaml
 
-from src.data import build_loaders, CIFAR10_MEAN, CIFAR10_STD
+from src.data import build_loaders, get_normalize_params
 from src.models_mae import MaskedAutoencoderViT
 
 def unpatchify(x, patch_size=4, img_size=32):
@@ -21,9 +21,9 @@ def unpatchify(x, patch_size=4, img_size=32):
     imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
     return imgs
 
-def denormalize(img):
-    mean = torch.tensor(CIFAR10_MEAN).view(3, 1, 1).to(img.device)
-    std = torch.tensor(CIFAR10_STD).view(3, 1, 1).to(img.device)
+def denormalize(img, mean, std):
+    mean = torch.tensor(mean).view(3, 1, 1).to(img.device)
+    std = torch.tensor(std).view(3, 1, 1).to(img.device)
     img = img * std + mean
     img = torch.clamp(img, 0, 1)
     return img
@@ -58,6 +58,10 @@ def main():
     model.to(device)
     model.eval()
 
+    # 获取归一化参数
+    dataset_name = config["data"].get("dataset", "cifar10").lower()
+    norm_mean, norm_std = get_normalize_params(dataset_name)
+
     # Get data
     config["data"]["train_limit"] = 16 # just need a few
     config["data"]["test_limit"] = 16
@@ -91,12 +95,12 @@ def main():
         im_masked = target * (1 - mask_expanded)
         
         # Unpatchify into images
-        imgs_orig = denormalize(images).cpu()
+        imgs_orig = denormalize(images, norm_mean, norm_std).cpu()
         imgs_recon = unpatchify(im_paste, model_cfg["patch_size"], config["data"]["image_size"])
-        imgs_recon = denormalize(imgs_recon).cpu()
+        imgs_recon = denormalize(imgs_recon, norm_mean, norm_std).cpu()
         
         imgs_masked = unpatchify(im_masked, model_cfg["patch_size"], config["data"]["image_size"])
-        imgs_masked = denormalize(imgs_masked).cpu()
+        imgs_masked = denormalize(imgs_masked, norm_mean, norm_std).cpu()
 
     # Plotting
     import os

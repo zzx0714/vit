@@ -10,6 +10,7 @@ class LinearPatchEmbed(nn.Module):
         super().__init__()
         if image_size % patch_size != 0:
             raise ValueError("image_size must be divisible by patch_size")
+        self.patch_size = patch_size
         self.grid_size = image_size // patch_size
         self.num_patches = self.grid_size * self.grid_size
         self.proj = nn.Conv2d(
@@ -36,6 +37,7 @@ class ConvStemPatchEmbed(nn.Module):
         layers = []
         channels = in_channels
         hidden = max(32, embed_dim // 2)
+        self.patch_size = patch_size
         num_downsamples = int(math.log2(patch_size))
         for index in range(num_downsamples):
             out_channels = hidden if index < num_downsamples - 1 else embed_dim
@@ -130,10 +132,12 @@ class VisionTransformer(nn.Module):
         return self.head(x[:, 0])
 
 
-def build_resnet18(num_classes=10):
+def build_resnet18(num_classes=10, image_size=32):
     model = resnet18(weights=None, num_classes=num_classes)
-    model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-    model.maxpool = nn.Identity()
+    if image_size < 64:
+        # 小图适配（CIFAR 风格）：3x3 conv, 无 maxpool
+        model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model.maxpool = nn.Identity()
     return model
 
 
@@ -143,7 +147,10 @@ def create_model(config):
     num_classes = int(config["data"].get("num_classes", 10))
 
     if name == "resnet18":
-        return build_resnet18(num_classes=num_classes)
+        return build_resnet18(
+            num_classes=num_classes,
+            image_size=int(config["data"].get("image_size", 32)),
+        )
 
     if name not in {"vanilla_vit", "convstem_vit"}:
         raise ValueError(f"Unsupported model: {name}")

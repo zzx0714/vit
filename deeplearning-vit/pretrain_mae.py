@@ -1,11 +1,12 @@
 import argparse
 import json
 import logging
+import math
 from pathlib import Path
 
 import torch
 import yaml
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 
 from src.data import build_loaders
 from src.engine_mae import train_one_epoch_mae, evaluate_mae
@@ -62,6 +63,7 @@ def main():
         decoder_depth=model_cfg["decoder_depth"],
         decoder_num_heads=model_cfg["decoder_num_heads"],
         mlp_ratio=model_cfg["mlp_ratio"],
+        patch_embed_type=model_cfg.get("patch_embed_type", "linear"),
     )
     model.to(device)
 
@@ -73,7 +75,20 @@ def main():
         weight_decay=train_cfg["weight_decay"],
         betas=(0.9, 0.95)
     )
-    scheduler = CosineAnnealingLR(optimizer, T_max=train_cfg["epochs"])
+
+    # Warmup + Cosine Decay 调度器
+    warmup_epochs = int(train_cfg.get("warmup_epochs", 20))
+    total_epochs = train_cfg["epochs"]
+    peak_lr = train_cfg["lr"]
+
+    def lr_lambda(epoch):
+        if epoch < warmup_epochs:
+            return (epoch + 1) / warmup_epochs  # 线性 warmup
+        # cosine decay 阶段
+        progress = (epoch - warmup_epochs) / max(1, total_epochs - warmup_epochs)
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+    scheduler = LambdaLR(optimizer, lr_lambda)
 
     mask_ratio = model_cfg.get("mask_ratio", 0.75)
     logger.info(f"Starting MAE Pretraining for {train_cfg['epochs']} epochs with mask_ratio {mask_ratio}")
